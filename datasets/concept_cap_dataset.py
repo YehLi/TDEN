@@ -55,7 +55,7 @@ class InputExample(object):
     def __init__(
         self, 
         image_feat=None,
-        image_target=None,
+        imgfeat_cls_prob=None,
         caption=None,
         image_loc=None,
         num_boxes=None,
@@ -64,7 +64,7 @@ class InputExample(object):
         self.image_feat = image_feat
         self.caption = caption
         self.image_loc = image_loc
-        self.image_target = image_target
+        self.imgfeat_cls_prob = imgfeat_cls_prob
         self.num_boxes = num_boxes
         self.overlaps = overlaps
 
@@ -99,7 +99,6 @@ class ConceptCap(data.Dataset):
         task_name,
         dataroot,
         anno_file,
-        phrase_file,
         feat_folder,
         tokenizer,
         bert_model,
@@ -233,7 +232,7 @@ class ConceptCap(data.Dataset):
         image_feat = example.image_feat
         tokens = example.caption
         image_loc = example.image_loc
-        image_target = example.image_target
+        imgfeat_cls_prob = example.imgfeat_cls_prob
         num_boxes = int(example.num_boxes)
         overlaps = example.overlaps
 
@@ -256,42 +255,42 @@ class ConceptCap(data.Dataset):
         mix_num_boxes = min(int(num_boxes), max_region_num)
         mix_boxes_pad = np.zeros((max_region_num, 5))
         mix_features_pad = np.zeros((max_region_num, 2048))
-        mix_target_pad = np.zeros((max_region_num, image_target.shape[1]))
+        mix_imgfeat_cls_prob_pad = np.zeros((max_region_num, imgfeat_cls_prob.shape[1]))
 
-        image_feat, image_loc, image_label, masked_label = self.random_region(
+        image_feat, image_loc, imgfeat_label, masked_label = self.random_region(
             image_feat, image_loc, mix_num_boxes, overlaps
         )
         mix_boxes_pad[:mix_num_boxes] = image_loc[:mix_num_boxes]
         mix_features_pad[:mix_num_boxes] = image_feat[:mix_num_boxes]
-        mix_target_pad[:mix_num_boxes] = image_target[:mix_num_boxes]
-        image_label = image_label[:mix_num_boxes]
+        mix_imgfeat_cls_prob_pad[:mix_num_boxes] = imgfeat_cls_prob[:mix_num_boxes]
+        imgfeat_label = imgfeat_label[:mix_num_boxes]
 
-        image_mask = [1] * (int(mix_num_boxes))
-        while len(image_mask) < max_region_num:
-            image_mask.append(0)
-            image_label.append(-1)
+        imgfeat_mask = [1] * (int(mix_num_boxes))
+        while len(imgfeat_mask) < max_region_num:
+            imgfeat_mask.append(0)
+            imgfeat_label.append(-1)
 
         input_ids = np.array(input_ids)
         input_mask = np.array(input_mask)
         segment_ids = np.array(segment_ids)
         lm_label_ids = np.array(lm_label_ids)
-        image_label = np.array(image_label)
+        imgfeat_label = np.array(imgfeat_label)
         
         return input_ids, input_mask, segment_ids, lm_label_ids, \
-            mix_features_pad, mix_boxes_pad, mix_target_pad, \
-            image_label, image_mask, masked_label
+            mix_features_pad, mix_boxes_pad, mix_imgfeat_cls_prob_pad, \
+            imgfeat_label, imgfeat_mask, masked_label
 
     def __getitem__(self, index):
         image_id = self.image_ids[index]
         caption = self.captions[image_id]
         image_path = self.feat_paths[index]
 
-        image_feature, image_target, num_boxes, image_location, overlaps = self.image_features_reader(self.feat_folder, image_path)  
+        image_feature, imgfeat_cls_prob, num_boxes, image_location, overlaps = self.image_features_reader(self.feat_folder, image_path)  
         tokens_caption = self.tokenizer.encode(caption)
 
         cur_example = InputExample(
             image_feat=image_feature,
-            image_target=image_target,
+            imgfeat_cls_prob=imgfeat_cls_prob,
             caption=tokens_caption,
             image_loc=image_location,
             num_boxes=num_boxes,
@@ -299,8 +298,8 @@ class ConceptCap(data.Dataset):
         )
 
         input_ids, input_mask, segment_ids, lm_label_ids, \
-        image_feat, image_loc, mix_target_pad,  \
-        image_label, image_mask, masked_label = \
+        image_feat, image_loc, imgfeat_cls_prob,  \
+        imgfeat_label, imgfeat_mask, masked_label = \
             self.convert_example_to_features(cur_example, self.max_seq_length, self.tokenizer, self.max_region_num - 1)
 
         mix_num_boxes = min(int(num_boxes), self.max_region_num - 1)
@@ -313,10 +312,10 @@ class ConceptCap(data.Dataset):
         image_loc = np.concatenate([np.expand_dims(g_image_loc, axis=0), image_loc], axis=0)
         image_loc = np.array(image_loc, dtype=np.float32)
 
-        mix_target_pad = np.array(mix_target_pad, dtype=np.float32)
+        imgfeat_cls_prob = np.array(imgfeat_cls_prob, dtype=np.float32)
 
-        image_mask = [1] + image_mask
-        image_mask = np.array(image_mask)
+        imgfeat_mask = [1] + imgfeat_mask
+        imgfeat_mask = np.array(imgfeat_mask)
 
         batch = (
             input_ids,
@@ -325,9 +324,9 @@ class ConceptCap(data.Dataset):
             lm_label_ids,
             image_feat,
             image_loc,
-            mix_target_pad,
-            image_label,
-            image_mask
+            imgfeat_cls_prob,
+            imgfeat_label,
+            imgfeat_mask
         )
         
         return batch
